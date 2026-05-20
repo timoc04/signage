@@ -1,0 +1,87 @@
+<?php
+require_once __DIR__ . '/config.php';
+
+$files = [];
+
+foreach (scandir(MEDIA_DIR) as $file) {
+    $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+
+    if (in_array($extension, ALLOWED_EXTENSIONS, true)) {
+        $files[] = MEDIA_URL . '/' . $file;
+    }
+}
+
+sort($files);
+?>
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Signage Player</title>
+    <style>
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            background: black;
+            overflow: hidden;
+        }
+
+        img, video {
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            background: black;
+        }
+
+        #message {
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 32px;
+            text-align: center;
+            margin-top: 40vh;
+        }
+    </style>
+</head>
+<body>
+
+<div id="player"></div>
+
+<script>
+const media = <?php echo json_encode($files); ?>;
+const imageDuration = 10000;
+let index = 0;
+
+function showNext() {
+    const player = document.getElementById("player");
+    player.innerHTML = "";
+
+    if (media.length === 0) {
+        player.innerHTML = "<div id='message'>Geen media beschikbaar</div>";
+        return;
+    }
+
+    const file = media[index];
+    index = (index + 1) % media.length;
+
+    if (file.toLowerCase().endsWith(".mp4")) {
+        const video = document.createElement("video");
+        video.src = file;
+        video.autoplay = true;
+        video.muted = true;
+        video.playsInline = true;
+        video.onended = showNext;
+        player.appendChild(video);
+    } else {
+        const img = document.createElement("img");
+        img.src = file;
+        player.appendChild(img);
+        setTimeout(showNext, imageDuration);
+    }
+}
+
+showNext();
+</script>
+
+</body>
+</html>
