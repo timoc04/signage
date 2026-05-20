@@ -1,4 +1,7 @@
 <?php
+
+header('Cache-Control: public, max-age=86400');
+
 require_once __DIR__ . '/config.php';
 
 $files = [];
@@ -81,6 +84,12 @@ function showNext() {
 }
 
 showNext();
+</script>
+
+<script>
+setInterval(function () {
+    location.reload();
+}, 3600000);
 </script>
 
 </body>
