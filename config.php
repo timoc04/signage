@@ -1,6 +1,6 @@
 <?php
 
-const ADMIN_PASSWORD = 'Wielrennen2004!';
+const ADMIN_PASSWORD = 'WACHTWOORD123!@#!';
 
 const MEDIA_DIR = __DIR__ . '/media';
 const MEDIA_URL = 'media';
