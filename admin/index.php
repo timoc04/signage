@@ -1,6 +1,26 @@
 <?php
 session_start();
+
 require_once __DIR__ . '/../config.php';
+
+$timeout = SESSION_TIMEOUT;
+
+/**
+ * Check session timeout.
+ */
+if (isset($_SESSION['last_activity'])) {
+    $inactiveTime = time() - $_SESSION['last_activity'];
+
+    if ($inactiveTime > $timeout) {
+        session_unset();
+        session_destroy();
+
+        header('Location: logout.php?timeout=1');
+        exit;
+    }
+}
+
+$_SESSION['last_activity'] = time();
 
 if (!isset($_SESSION['logged_in'])) {
     header('Location: login.php');
@@ -23,6 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['media'])) {
     } else {
         $safeName = preg_replace('/[^a-zA-Z0-9._-]/', '_', basename($file['name']));
         move_uploaded_file($file['tmp_name'], MEDIA_DIR . '/' . $safeName);
+
         $message = 'Bestand geüpload.';
     }
 }
@@ -62,6 +83,7 @@ if (
                 $message = 'Er bestaat al een bestand met deze naam.';
             } else {
                 rename($oldPath, $newPath);
+
                 $message = 'Bestand hernoemd.';
             }
         }
@@ -77,6 +99,7 @@ if (isset($_GET['delete'])) {
 
     if (is_file($path)) {
         unlink($path);
+
         $message = 'Bestand verwijderd.';
     }
 }
@@ -136,7 +159,7 @@ sort($files);
         .top-links {
             display: flex;
             gap: 12px;
-            margin-top: 16px;
+            margin-top: 18px;
         }
 
         .card {
@@ -252,11 +275,19 @@ sort($files);
 
 <header>
     <h1>Signage beheer</h1>
-    <p>Upload, hernoem en verwijder media voor je fullscreen signage player.</p>
+
+    <p>
+        Upload, hernoem en verwijder media voor je fullscreen signage player.
+    </p>
 
     <div class="top-links">
-        <a class="button" href="../index.php" target="_blank">Open player</a>
-        <a class="button secondary" href="logout.php">Uitloggen</a>
+        <a class="button" href="../index.php" target="_blank">
+            Open player
+        </a>
+
+        <a class="button secondary" href="logout.php">
+            Uitloggen
+        </a>
     </div>
 </header>
 
@@ -271,8 +302,16 @@ sort($files);
         <h2>Media uploaden</h2>
 
         <form method="POST" enctype="multipart/form-data">
-            <input type="file" name="media" accept=".jpg,.jpeg,.png,.webp,.mp4" required>
-            <button type="submit">Uploaden</button>
+            <input
+                type="file"
+                name="media"
+                accept=".jpg,.jpeg,.png,.webp,.mp4"
+                required
+            >
+
+            <button type="submit">
+                Uploaden
+            </button>
         </form>
     </section>
 
@@ -280,21 +319,32 @@ sort($files);
         <h2>Huidige media</h2>
 
         <?php if (empty($files)): ?>
-            <p class="empty">Er is nog geen media geüpload.</p>
+            <p class="empty">
+                Er is nog geen media geüpload.
+            </p>
         <?php else: ?>
             <div class="media-grid">
                 <?php foreach ($files as $file): ?>
                     <?php
-                        $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+                        $extension = strtolower(
+                            pathinfo($file, PATHINFO_EXTENSION)
+                        );
+
                         $url = '../media/' . rawurlencode($file);
                     ?>
 
                     <div class="media-item">
                         <div class="preview">
                             <?php if ($extension === 'mp4'): ?>
-                                <video src="<?php echo htmlspecialchars($url); ?>" muted></video>
+                                <video
+                                    src="<?php echo htmlspecialchars($url); ?>"
+                                    muted
+                                ></video>
                             <?php else: ?>
-                                <img src="<?php echo htmlspecialchars($url); ?>" alt="">
+                                <img
+                                    src="<?php echo htmlspecialchars($url); ?>"
+                                    alt=""
+                                >
                             <?php endif; ?>
                         </div>
 
@@ -304,23 +354,32 @@ sort($files);
                             </div>
 
                             <form class="rename-form" method="POST">
-                                <input type="hidden"
-                                       name="rename_old"
-                                       value="<?php echo htmlspecialchars($file); ?>">
+                                <input
+                                    type="hidden"
+                                    name="rename_old"
+                                    value="<?php echo htmlspecialchars($file); ?>"
+                                >
 
-                                <input type="text"
-                                       name="rename_new"
-                                       placeholder="Nieuwe naam, bijv. 01_intro.mp4"
-                                       required>
+                                <input
+                                    type="text"
+                                    name="rename_new"
+                                    placeholder="Nieuwe naam"
+                                    required
+                                >
 
-                                <button class="rename-button" type="submit">
+                                <button
+                                    class="rename-button"
+                                    type="submit"
+                                >
                                     Hernoemen
                                 </button>
                             </form>
 
-                            <a class="delete"
-                               href="?delete=<?php echo urlencode($file); ?>"
-                               onclick="return confirm('Weet je zeker dat je dit bestand wilt verwijderen?');">
+                            <a
+                                class="delete"
+                                href="?delete=<?php echo urlencode($file); ?>"
+                                onclick="return confirm('Weet je zeker dat je dit bestand wilt verwijderen?');"
+                            >
                                 Verwijderen
                             </a>
                         </div>
@@ -330,6 +389,14 @@ sort($files);
         <?php endif; ?>
     </section>
 </main>
+
+<script>
+const timeoutSeconds = <?php echo SESSION_TIMEOUT; ?>;
+
+setTimeout(function () {
+    window.location.href = "logout.php?timeout=1";
+}, timeoutSeconds * 1000);
+</script>
 
 </body>
 </html>
