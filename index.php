@@ -62,7 +62,8 @@ if (is_dir($mediaDir)) {
             overflow: hidden;
         }
 
-        img, video {
+        img,
+        video {
             width: 100vw;
             height: 100vh;
             object-fit: contain;
@@ -85,6 +86,7 @@ if (is_dir($mediaDir)) {
 
 <script>
 const media = <?php echo json_encode($files); ?>;
+
 let index = 0;
 
 function preloadNext(nextIndex) {
@@ -98,41 +100,85 @@ function preloadNext(nextIndex) {
 
     if (file.toLowerCase().endsWith(".mp4")) {
         const video = document.createElement("video");
+
         video.src = file;
         video.preload = "auto";
     } else {
         const img = new Image();
+
         img.src = file;
     }
+}
+
+function reloadAfterPlaylist() {
+    setTimeout(function () {
+        location.reload();
+    }, 1000);
 }
 
 function showNext() {
     const player = document.getElementById("player");
 
     if (media.length === 0) {
-        player.innerHTML = "<div id='message'>Geen media beschikbaar</div>";
+        player.innerHTML =
+            "<div id='message'>Geen media beschikbaar</div>";
+
         return;
     }
 
     const item = media[index];
     const file = item.src;
+
     const nextIndex = (index + 1) % media.length;
 
     preloadNext(nextIndex);
 
-    index = nextIndex;
-
     if (file.toLowerCase().endsWith(".mp4")) {
         const video = document.createElement("video");
+
+        let movedToNext = false;
+
+        function goNextOnce() {
+            if (movedToNext) {
+                return;
+            }
+
+            movedToNext = true;
+
+            if (nextIndex === 0) {
+                reloadAfterPlaylist();
+            } else {
+                index = nextIndex;
+                showNext();
+            }
+        }
 
         video.src = file;
         video.autoplay = true;
         video.muted = true;
         video.playsInline = true;
-        video.onended = showNext;
+        video.preload = "auto";
+
+        video.onended = goNextOnce;
+        video.onerror = goNextOnce;
+
+        video.onloadedmetadata = function () {
+            const fallbackTime = (video.duration + 2) * 1000;
+
+            setTimeout(function () {
+                goNextOnce();
+            }, fallbackTime);
+        };
 
         player.innerHTML = "";
         player.appendChild(video);
+
+        video.load();
+
+        video.play().catch(function () {
+            goNextOnce();
+        });
+
     } else {
         const img = document.createElement("img");
 
@@ -142,20 +188,31 @@ function showNext() {
             player.innerHTML = "";
             player.appendChild(img);
 
-            setTimeout(showNext, item.duration * 1000);
+            setTimeout(function () {
+
+                if (nextIndex === 0) {
+                    reloadAfterPlaylist();
+                } else {
+                    index = nextIndex;
+                    showNext();
+                }
+
+            }, item.duration * 1000);
         };
 
-        img.onerror = showNext;
+        img.onerror = function () {
+
+            if (nextIndex === 0) {
+                reloadAfterPlaylist();
+            } else {
+                index = nextIndex;
+                showNext();
+            }
+        };
     }
 }
 
 showNext();
-</script>
-
-<script>
-setInterval(function () {
-    location.reload();
-}, 3600000);
 </script>
 
 </body>
