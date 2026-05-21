@@ -4,13 +4,30 @@ header('Cache-Control: public, max-age=86400');
 
 require_once __DIR__ . '/config.php';
 
+function loadSettings(): array
+{
+    if (!file_exists(SETTINGS_FILE)) {
+        return [];
+    }
+
+    $json = file_get_contents(SETTINGS_FILE);
+    $settings = json_decode($json, true);
+
+    return is_array($settings) ? $settings : [];
+}
+
+$settings = loadSettings();
 $files = [];
 
 foreach (scandir(MEDIA_DIR) as $file) {
     $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
 
     if (in_array($extension, ALLOWED_EXTENSIONS, true)) {
-        $files[] = MEDIA_URL . '/' . $file;
+        $files[] = [
+            'src' => MEDIA_URL . '/' . $file,
+            'name' => $file,
+            'duration' => $settings[$file]['duration'] ?? IMAGE_DEFAULT_DURATION,
+        ];
     }
 }
 
@@ -52,7 +69,6 @@ sort($files);
 
 <script>
 const media = <?php echo json_encode($files); ?>;
-const imageDuration = 10000;
 let index = 0;
 
 function showNext() {
@@ -64,7 +80,9 @@ function showNext() {
         return;
     }
 
-    const file = media[index];
+    const item = media[index];
+    const file = item.src;
+
     index = (index + 1) % media.length;
 
     if (file.toLowerCase().endsWith(".mp4")) {
@@ -79,7 +97,7 @@ function showNext() {
         const img = document.createElement("img");
         img.src = file;
         player.appendChild(img);
-        setTimeout(showNext, imageDuration);
+        setTimeout(showNext, item.duration * 1000);
     }
 }
 
