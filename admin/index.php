@@ -26,22 +26,50 @@ if (!isset($_SESSION['logged_in'])) {
 
 $message = '';
 
-function loadSettings(): array
+function sanitizeScreenName(string $screen): string
 {
-    if (!file_exists(SETTINGS_FILE)) {
+    return preg_replace('/[^a-zA-Z0-9_-]/', '', $screen);
+}
+
+function getScreens(): array
+{
+    if (!is_dir(SCREENS_DIR)) {
+        mkdir(SCREENS_DIR, 0755, true);
+    }
+
+    $screens = [];
+
+    foreach (scandir(SCREENS_DIR) as $item) {
+        if ($item === '.' || $item === '..') {
+            continue;
+        }
+
+        if (is_dir(SCREENS_DIR . '/' . $item)) {
+            $screens[] = $item;
+        }
+    }
+
+    sort($screens);
+
+    return $screens;
+}
+
+function loadSettings(string $settingsFile): array
+{
+    if (!file_exists($settingsFile)) {
         return [];
     }
 
-    $json = file_get_contents(SETTINGS_FILE);
+    $json = file_get_contents($settingsFile);
     $settings = json_decode($json, true);
 
     return is_array($settings) ? $settings : [];
 }
 
-function saveSettings(array $settings): void
+function saveSettings(string $settingsFile, array $settings): void
 {
     file_put_contents(
-        SETTINGS_FILE,
+        $settingsFile,
         json_encode($settings, JSON_PRETTY_PRINT),
         LOCK_EX
     );
@@ -54,7 +82,63 @@ function isImageFile(string $file): bool
     return in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true);
 }
 
-$settings = loadSettings();
+/**
+ * Create screen.
+ */
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_POST['new_screen'])
+) {
+    $newScreen = sanitizeScreenName(trim($_POST['new_screen']));
+
+    if ($newScreen === '') {
+        $message = 'Schermnaam mag niet leeg zijn.';
+    } else {
+        $screenDir = SCREENS_DIR . '/' . $newScreen;
+        $mediaDir = $screenDir . '/media';
+        $settingsFile = $screenDir . '/settings.json';
+
+        if (is_dir($screenDir)) {
+            $message = 'Dit scherm bestaat al.';
+        } else {
+            mkdir($mediaDir, 0755, true);
+            file_put_contents($settingsFile, '{}');
+
+            $message = 'Scherm aangemaakt.';
+        }
+    }
+}
+
+$screens = getScreens();
+
+if (empty($screens)) {
+    $mainDir = SCREENS_DIR . '/main/media';
+    mkdir($mainDir, 0755, true);
+    file_put_contents(SCREENS_DIR . '/main/settings.json', '{}');
+
+    $screens = ['main'];
+}
+
+$currentScreen = sanitizeScreenName($_GET['screen'] ?? $screens[0]);
+
+if (!in_array($currentScreen, $screens, true)) {
+    $currentScreen = $screens[0];
+}
+
+$screenDir = SCREENS_DIR . '/' . $currentScreen;
+$mediaDir = $screenDir . '/media';
+$settingsFile = $screenDir . '/settings.json';
+$mediaUrl = '../screens/' . $currentScreen . '/media';
+
+if (!is_dir($mediaDir)) {
+    mkdir($mediaDir, 0755, true);
+}
+
+if (!file_exists($settingsFile)) {
+    file_put_contents($settingsFile, '{}');
+}
+
+$settings = loadSettings($settingsFile);
 
 /**
  * Upload media file.
@@ -69,11 +153,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['media'])) {
         $message = 'Upload mislukt.';
     } else {
         $safeName = preg_replace('/[^a-zA-Z0-9._-]/', '_', basename($file['name']));
-        move_uploaded_file($file['tmp_name'], MEDIA_DIR . '/' . $safeName);
+        move_uploaded_file($file['tmp_name'], $mediaDir . '/' . $safeName);
 
         if (isImageFile($safeName)) {
             $settings[$safeName]['duration'] = IMAGE_DEFAULT_DURATION;
-            saveSettings($settings);
+            saveSettings($settingsFile, $settings);
         }
 
         $message = 'Bestand geüpload.';
@@ -93,13 +177,13 @@ if (
 
     if ($duration < 1) {
         $message = 'Weergavetijd moet minimaal 1 seconde zijn.';
-    } elseif (!is_file(MEDIA_DIR . '/' . $fileName)) {
+    } elseif (!is_file($mediaDir . '/' . $fileName)) {
         $message = 'Bestand bestaat niet.';
     } elseif (!isImageFile($fileName)) {
         $message = 'Weergavetijd kan alleen bij afbeeldingen worden aangepast.';
     } else {
         $settings[$fileName]['duration'] = $duration;
-        saveSettings($settings);
+        saveSettings($settingsFile, $settings);
 
         $message = 'Weergavetijd opgeslagen.';
     }
@@ -116,7 +200,7 @@ if (
     $oldName = basename($_POST['rename_old']);
     $newName = trim(basename($_POST['rename_new']));
 
-    $oldPath = MEDIA_DIR . '/' . $oldName;
+    $oldPath = $mediaDir . '/' . $oldName;
     $oldExtension = strtolower(pathinfo($oldName, PATHINFO_EXTENSION));
 
     if ($newName === '') {
@@ -134,7 +218,7 @@ if (
             $message = 'Nieuwe bestandstype is niet toegestaan.';
         } else {
             $safeNewName = preg_replace('/[^a-zA-Z0-9._-]/', '_', basename($newName));
-            $newPath = MEDIA_DIR . '/' . $safeNewName;
+            $newPath = $mediaDir . '/' . $safeNewName;
 
             if (is_file($newPath)) {
                 $message = 'Er bestaat al een bestand met deze naam.';
@@ -144,7 +228,7 @@ if (
                 if (isset($settings[$oldName])) {
                     $settings[$safeNewName] = $settings[$oldName];
                     unset($settings[$oldName]);
-                    saveSettings($settings);
+                    saveSettings($settingsFile, $settings);
                 }
 
                 $message = 'Bestand hernoemd.';
@@ -158,13 +242,13 @@ if (
  */
 if (isset($_GET['delete'])) {
     $fileToDelete = basename($_GET['delete']);
-    $path = MEDIA_DIR . '/' . $fileToDelete;
+    $path = $mediaDir . '/' . $fileToDelete;
 
     if (is_file($path)) {
         unlink($path);
 
         unset($settings[$fileToDelete]);
-        saveSettings($settings);
+        saveSettings($settingsFile, $settings);
 
         $message = 'Bestand verwijderd.';
     }
@@ -175,7 +259,7 @@ if (isset($_GET['delete'])) {
  */
 $files = [];
 
-foreach (scandir(MEDIA_DIR) as $file) {
+foreach (scandir($mediaDir) as $file) {
     $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
 
     if (in_array($extension, ALLOWED_EXTENSIONS, true)) {
@@ -226,6 +310,7 @@ sort($files);
             display: flex;
             gap: 12px;
             margin-top: 18px;
+            flex-wrap: wrap;
         }
 
         .card {
@@ -263,7 +348,8 @@ sort($files);
 
         input[type="file"],
         input[type="text"],
-        input[type="number"] {
+        input[type="number"],
+        select {
             box-sizing: border-box;
             padding: 10px;
             background: #f9fafb;
@@ -271,6 +357,12 @@ sort($files);
             border-radius: 8px;
             width: 100%;
             margin-bottom: 10px;
+        }
+
+        .screen-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
         }
 
         .media-grid {
@@ -332,14 +424,20 @@ sort($files);
             font-weight: bold;
         }
 
-        .empty {
+        .empty,
+        .small-text {
             color: #6b7280;
         }
 
         .small-text {
-            color: #6b7280;
             font-size: 13px;
             margin-bottom: 12px;
+        }
+
+        @media (max-width: 800px) {
+            .screen-actions {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -350,12 +448,12 @@ sort($files);
     <h1>Signage beheer</h1>
 
     <p>
-        Upload, hernoem en verwijder media voor je fullscreen signage player.
+        Beheer meerdere signage schermen, media en weergavetijden.
     </p>
 
     <div class="top-links">
-        <a class="button" href="../index.php" target="_blank">
-            Open player
+        <a class="button" href="../index.php?screen=<?php echo urlencode($currentScreen); ?>" target="_blank">
+            Open huidig scherm
         </a>
 
         <a class="button secondary" href="logout.php">
@@ -372,7 +470,50 @@ sort($files);
     <?php endif; ?>
 
     <section class="card">
-        <h2>Media uploaden</h2>
+        <h2>Schermen</h2>
+
+        <div class="screen-actions">
+            <form method="GET">
+                <label>Scherm kiezen</label>
+
+                <select name="screen" onchange="this.form.submit()">
+                    <?php foreach ($screens as $screen): ?>
+                        <option
+                            value="<?php echo htmlspecialchars($screen); ?>"
+                            <?php echo $screen === $currentScreen ? 'selected' : ''; ?>
+                        >
+                            <?php echo htmlspecialchars($screen); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </form>
+
+            <form method="POST">
+                <label>Nieuw scherm aanmaken</label>
+
+                <input
+                    type="text"
+                    name="new_screen"
+                    placeholder="Bijvoorbeeld: bar, entree, zaal1"
+                    required
+                >
+
+                <button type="submit">
+                    Scherm aanmaken
+                </button>
+            </form>
+        </div>
+
+        <p class="small-text">
+            Player URL huidig scherm:
+            <strong>
+                /signage/?screen=<?php echo htmlspecialchars($currentScreen); ?>
+            </strong>
+        </p>
+    </section>
+
+    <section class="card">
+        <h2>Media uploaden voor: <?php echo htmlspecialchars($currentScreen); ?></h2>
 
         <form method="POST" enctype="multipart/form-data">
             <input
@@ -393,17 +534,14 @@ sort($files);
 
         <?php if (empty($files)): ?>
             <p class="empty">
-                Er is nog geen media geüpload.
+                Er is nog geen media geüpload voor dit scherm.
             </p>
         <?php else: ?>
             <div class="media-grid">
                 <?php foreach ($files as $file): ?>
                     <?php
-                        $extension = strtolower(
-                            pathinfo($file, PATHINFO_EXTENSION)
-                        );
-
-                        $url = '../media/' . rawurlencode($file);
+                        $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+                        $url = $mediaUrl . '/' . rawurlencode($file);
                         $isImage = isImageFile($file);
                         $duration = $settings[$file]['duration'] ?? IMAGE_DEFAULT_DURATION;
                     ?>
@@ -411,15 +549,9 @@ sort($files);
                     <div class="media-item">
                         <div class="preview">
                             <?php if ($extension === 'mp4'): ?>
-                                <video
-                                    src="<?php echo htmlspecialchars($url); ?>"
-                                    muted
-                                ></video>
+                                <video src="<?php echo htmlspecialchars($url); ?>" muted></video>
                             <?php else: ?>
-                                <img
-                                    src="<?php echo htmlspecialchars($url); ?>"
-                                    alt=""
-                                >
+                                <img src="<?php echo htmlspecialchars($url); ?>" alt="">
                             <?php endif; ?>
                         </div>
 
@@ -444,10 +576,7 @@ sort($files);
                                         required
                                     >
 
-                                    <button
-                                        class="rename-button"
-                                        type="submit"
-                                    >
+                                    <button class="rename-button" type="submit">
                                         Weergavetijd opslaan
                                     </button>
                                 </form>
@@ -471,17 +600,14 @@ sort($files);
                                     required
                                 >
 
-                                <button
-                                    class="rename-button"
-                                    type="submit"
-                                >
+                                <button class="rename-button" type="submit">
                                     Hernoemen
                                 </button>
                             </form>
 
                             <a
                                 class="delete"
-                                href="?delete=<?php echo urlencode($file); ?>"
+                                href="?screen=<?php echo urlencode($currentScreen); ?>&delete=<?php echo urlencode($file); ?>"
                                 onclick="return confirm('Weet je zeker dat je dit bestand wilt verwijderen?');"
                             >
                                 Verwijderen

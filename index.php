@@ -4,34 +4,48 @@ header('Cache-Control: public, max-age=86400');
 
 require_once __DIR__ . '/config.php';
 
-function loadSettings(): array
+function sanitizeScreenName(string $screen): string
 {
-    if (!file_exists(SETTINGS_FILE)) {
+    return preg_replace('/[^a-zA-Z0-9_-]/', '', $screen);
+}
+
+function loadSettings(string $settingsFile): array
+{
+    if (!file_exists($settingsFile)) {
         return [];
     }
 
-    $json = file_get_contents(SETTINGS_FILE);
+    $json = file_get_contents($settingsFile);
     $settings = json_decode($json, true);
 
     return is_array($settings) ? $settings : [];
 }
 
-$settings = loadSettings();
+$screen = sanitizeScreenName($_GET['screen'] ?? 'main');
+
+$mediaDir = SCREENS_DIR . '/' . $screen . '/media';
+$settingsFile = SCREENS_DIR . '/' . $screen . '/settings.json';
+$mediaUrl = SCREENS_URL . '/' . $screen . '/media';
+
 $files = [];
 
-foreach (scandir(MEDIA_DIR) as $file) {
-    $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+if (is_dir($mediaDir)) {
+    $settings = loadSettings($settingsFile);
 
-    if (in_array($extension, ALLOWED_EXTENSIONS, true)) {
-        $files[] = [
-            'src' => MEDIA_URL . '/' . $file,
-            'name' => $file,
-            'duration' => $settings[$file]['duration'] ?? IMAGE_DEFAULT_DURATION,
-        ];
+    foreach (scandir($mediaDir) as $file) {
+        $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+
+        if (in_array($extension, ALLOWED_EXTENSIONS, true)) {
+            $files[] = [
+                'src' => $mediaUrl . '/' . $file,
+                'name' => $file,
+                'duration' => $settings[$file]['duration'] ?? IMAGE_DEFAULT_DURATION,
+            ];
+        }
     }
-}
 
-sort($files);
+    sort($files);
+}
 ?>
 
 <!DOCTYPE html>
@@ -117,10 +131,6 @@ function showNext() {
         video.playsInline = true;
         video.onended = showNext;
 
-        video.onerror = function () {
-            showNext();
-        };
-
         player.innerHTML = "";
         player.appendChild(video);
     } else {
@@ -135,9 +145,7 @@ function showNext() {
             setTimeout(showNext, item.duration * 1000);
         };
 
-        img.onerror = function () {
-            showNext();
-        };
+        img.onerror = showNext;
     }
 }
 
