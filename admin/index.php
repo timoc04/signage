@@ -5,9 +5,6 @@ require_once __DIR__ . '/../config.php';
 
 $timeout = SESSION_TIMEOUT;
 
-/**
- * Check session timeout.
- */
 if (isset($_SESSION['last_activity'])) {
     $inactiveTime = time() - $_SESSION['last_activity'];
 
@@ -29,6 +26,36 @@ if (!isset($_SESSION['logged_in'])) {
 
 $message = '';
 
+function loadSettings(): array
+{
+    if (!file_exists(SETTINGS_FILE)) {
+        return [];
+    }
+
+    $json = file_get_contents(SETTINGS_FILE);
+    $settings = json_decode($json, true);
+
+    return is_array($settings) ? $settings : [];
+}
+
+function saveSettings(array $settings): void
+{
+    file_put_contents(
+        SETTINGS_FILE,
+        json_encode($settings, JSON_PRETTY_PRINT),
+        LOCK_EX
+    );
+}
+
+function isImageFile(string $file): bool
+{
+    $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+
+    return in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true);
+}
+
+$settings = loadSettings();
+
 /**
  * Upload media file.
  */
@@ -44,7 +71,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['media'])) {
         $safeName = preg_replace('/[^a-zA-Z0-9._-]/', '_', basename($file['name']));
         move_uploaded_file($file['tmp_name'], MEDIA_DIR . '/' . $safeName);
 
+        if (isImageFile($safeName)) {
+            $settings[$safeName]['duration'] = IMAGE_DEFAULT_DURATION;
+            saveSettings($settings);
+        }
+
         $message = 'Bestand geüpload.';
+    }
+}
+
+/**
+ * Update image duration.
+ */
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_POST['duration_file'])
+    && isset($_POST['duration_seconds'])
+) {
+    $fileName = basename($_POST['duration_file']);
+    $duration = (int) $_POST['duration_seconds'];
+
+    if ($duration < 1) {
+        $message = 'Weergavetijd moet minimaal 1 seconde zijn.';
+    } elseif (!is_file(MEDIA_DIR . '/' . $fileName)) {
+        $message = 'Bestand bestaat niet.';
+    } elseif (!isImageFile($fileName)) {
+        $message = 'Weergavetijd kan alleen bij afbeeldingen worden aangepast.';
+    } else {
+        $settings[$fileName]['duration'] = $duration;
+        saveSettings($settings);
+
+        $message = 'Weergavetijd opgeslagen.';
     }
 }
 
@@ -84,6 +141,12 @@ if (
             } else {
                 rename($oldPath, $newPath);
 
+                if (isset($settings[$oldName])) {
+                    $settings[$safeNewName] = $settings[$oldName];
+                    unset($settings[$oldName]);
+                    saveSettings($settings);
+                }
+
                 $message = 'Bestand hernoemd.';
             }
         }
@@ -99,6 +162,9 @@ if (isset($_GET['delete'])) {
 
     if (is_file($path)) {
         unlink($path);
+
+        unset($settings[$fileToDelete]);
+        saveSettings($settings);
 
         $message = 'Bestand verwijderd.';
     }
@@ -196,7 +262,8 @@ sort($files);
         }
 
         input[type="file"],
-        input[type="text"] {
+        input[type="text"],
+        input[type="number"] {
             box-sizing: border-box;
             padding: 10px;
             background: #f9fafb;
@@ -268,6 +335,12 @@ sort($files);
         .empty {
             color: #6b7280;
         }
+
+        .small-text {
+            color: #6b7280;
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
     </style>
 </head>
 
@@ -331,6 +404,8 @@ sort($files);
                         );
 
                         $url = '../media/' . rawurlencode($file);
+                        $isImage = isImageFile($file);
+                        $duration = $settings[$file]['duration'] ?? IMAGE_DEFAULT_DURATION;
                     ?>
 
                     <div class="media-item">
@@ -352,6 +427,35 @@ sort($files);
                             <div class="filename">
                                 <?php echo htmlspecialchars($file); ?>
                             </div>
+
+                            <?php if ($isImage): ?>
+                                <form class="rename-form" method="POST">
+                                    <input
+                                        type="hidden"
+                                        name="duration_file"
+                                        value="<?php echo htmlspecialchars($file); ?>"
+                                    >
+
+                                    <input
+                                        type="number"
+                                        name="duration_seconds"
+                                        min="1"
+                                        value="<?php echo htmlspecialchars((string) $duration); ?>"
+                                        required
+                                    >
+
+                                    <button
+                                        class="rename-button"
+                                        type="submit"
+                                    >
+                                        Weergavetijd opslaan
+                                    </button>
+                                </form>
+                            <?php else: ?>
+                                <div class="small-text">
+                                    Video wordt volledig afgespeeld.
+                                </div>
+                            <?php endif; ?>
 
                             <form class="rename-form" method="POST">
                                 <input
