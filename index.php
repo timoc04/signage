@@ -38,6 +38,7 @@ sort($files);
 <html>
 <head>
     <title>Signage Player</title>
+
     <style>
         html, body {
             margin: 0;
@@ -63,6 +64,7 @@ sort($files);
         }
     </style>
 </head>
+
 <body>
 
 <div id="player"></div>
@@ -71,9 +73,27 @@ sort($files);
 const media = <?php echo json_encode($files); ?>;
 let index = 0;
 
+function preloadNext(nextIndex) {
+    const item = media[nextIndex];
+
+    if (!item) {
+        return;
+    }
+
+    const file = item.src;
+
+    if (file.toLowerCase().endsWith(".mp4")) {
+        const video = document.createElement("video");
+        video.src = file;
+        video.preload = "auto";
+    } else {
+        const img = new Image();
+        img.src = file;
+    }
+}
+
 function showNext() {
     const player = document.getElementById("player");
-    player.innerHTML = "";
 
     if (media.length === 0) {
         player.innerHTML = "<div id='message'>Geen media beschikbaar</div>";
@@ -82,22 +102,42 @@ function showNext() {
 
     const item = media[index];
     const file = item.src;
+    const nextIndex = (index + 1) % media.length;
 
-    index = (index + 1) % media.length;
+    preloadNext(nextIndex);
+
+    index = nextIndex;
 
     if (file.toLowerCase().endsWith(".mp4")) {
         const video = document.createElement("video");
+
         video.src = file;
         video.autoplay = true;
         video.muted = true;
         video.playsInline = true;
         video.onended = showNext;
+
+        video.onerror = function () {
+            showNext();
+        };
+
+        player.innerHTML = "";
         player.appendChild(video);
     } else {
         const img = document.createElement("img");
+
         img.src = file;
-        player.appendChild(img);
-        setTimeout(showNext, item.duration * 1000);
+
+        img.onload = function () {
+            player.innerHTML = "";
+            player.appendChild(img);
+
+            setTimeout(showNext, item.duration * 1000);
+        };
+
+        img.onerror = function () {
+            showNext();
+        };
     }
 }
 
