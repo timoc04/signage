@@ -54,6 +54,29 @@ function getScreens(): array
     return $screens;
 }
 
+function deleteDirectory(string $dir): void
+{
+    if (!is_dir($dir)) {
+        return;
+    }
+
+    foreach (scandir($dir) as $item) {
+        if ($item === '.' || $item === '..') {
+            continue;
+        }
+
+        $path = $dir . '/' . $item;
+
+        if (is_dir($path)) {
+            deleteDirectory($path);
+        } else {
+            unlink($path);
+        }
+    }
+
+    rmdir($dir);
+}
+
 function loadSettings(string $settingsFile): array
 {
     if (!file_exists($settingsFile)) {
@@ -109,10 +132,34 @@ if (
     }
 }
 
+/**
+ * Delete screen.
+ * The main screen may never be deleted.
+ */
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_POST['delete_screen'])
+) {
+    $screenToDelete = sanitizeScreenName($_POST['delete_screen']);
+    $availableScreens = getScreens();
+
+    if ($screenToDelete === 'main') {
+        $message = 'Het hoofdscherm main kan niet verwijderd worden.';
+    } elseif (!in_array($screenToDelete, $availableScreens, true)) {
+        $message = 'Scherm bestaat niet.';
+    } elseif (count($availableScreens) <= 1) {
+        $message = 'Je kunt het laatste scherm niet verwijderen.';
+    } else {
+        deleteDirectory(SCREENS_DIR . '/' . $screenToDelete);
+        $message = 'Scherm verwijderd.';
+    }
+}
+
 $screens = getScreens();
 
 if (empty($screens)) {
     $mainDir = SCREENS_DIR . '/main/media';
+
     mkdir($mainDir, 0755, true);
     file_put_contents(SCREENS_DIR . '/main/settings.json', '{}');
 
@@ -122,7 +169,11 @@ if (empty($screens)) {
 $currentScreen = sanitizeScreenName($_GET['screen'] ?? $screens[0]);
 
 if (!in_array($currentScreen, $screens, true)) {
-    $currentScreen = $screens[0];
+    $currentScreen = 'main';
+
+    if (!in_array('main', $screens, true)) {
+        $currentScreen = $screens[0];
+    }
 }
 
 $screenDir = SCREENS_DIR . '/' . $currentScreen;
@@ -361,8 +412,18 @@ sort($files);
 
         .screen-actions {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 24px;
+        }
+
+        .delete-screen-button {
+            width: 100%;
+            background: #dc2626;
+        }
+
+        .delete-screen-button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
         }
 
         .media-grid {
@@ -434,7 +495,7 @@ sort($files);
             margin-bottom: 12px;
         }
 
-        @media (max-width: 800px) {
+        @media (max-width: 900px) {
             .screen-actions {
                 grid-template-columns: 1fr;
             }
@@ -452,7 +513,7 @@ sort($files);
     </p>
 
     <div class="top-links">
-        <a class="button" href="../index.php?screen=<?php echo urlencode($currentScreen); ?>" target="_blank">
+        <a class="button" href="../<?php echo htmlspecialchars($currentScreen); ?>" target="_blank">
             Open huidig scherm
         </a>
 
@@ -494,13 +555,40 @@ sort($files);
                 <input
                     type="text"
                     name="new_screen"
-                    placeholder="Bijvoorbeeld: bar, entree, zaal1"
+                    placeholder="Bijvoorbeeld: scherm1, bar, entree"
                     required
                 >
 
                 <button type="submit">
                     Scherm aanmaken
                 </button>
+            </form>
+
+            <form
+                method="POST"
+                onsubmit="return confirm('Weet je zeker dat je dit scherm inclusief alle media wilt verwijderen?');"
+            >
+                <label>Huidig scherm verwijderen</label>
+
+                <input
+                    type="hidden"
+                    name="delete_screen"
+                    value="<?php echo htmlspecialchars($currentScreen); ?>"
+                >
+
+                <button
+                    class="delete-screen-button"
+                    type="submit"
+                    <?php echo $currentScreen === 'main' ? 'disabled' : ''; ?>
+                >
+                    Scherm verwijderen
+                </button>
+
+                <?php if ($currentScreen === 'main'): ?>
+                    <div class="small-text">
+                        Het hoofdscherm main kan niet verwijderd worden.
+                    </div>
+                <?php endif; ?>
             </form>
         </div>
 
@@ -513,7 +601,10 @@ sort($files);
     </section>
 
     <section class="card">
-        <h2>Media uploaden voor: <?php echo htmlspecialchars($currentScreen); ?></h2>
+        <h2>
+            Media uploaden voor:
+            <?php echo htmlspecialchars($currentScreen); ?>
+        </h2>
 
         <form method="POST" enctype="multipart/form-data">
             <input
