@@ -595,7 +595,7 @@ sort($files);
         <p class="small-text">
             Player URL huidig scherm:
             <strong>
-                /signage/<?php echo htmlspecialchars($currentScreen); ?>
+                /projects/signage/<?php echo htmlspecialchars($currentScreen); ?>
             </strong>
         </p>
     </section>
